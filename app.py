@@ -184,7 +184,7 @@ if col_cod:
             <div style="margin-top:2px;color:#B8B8B8;font-size:12px;padding-left:10px;">{vagas}</div></li>"""
         alerta = f"""
         <div style="background:#2A1D1D;border:1px solid #5C2B2B;border-radius:8px;padding:16px 20px;color:#E6E6E6;margin-bottom:24px;">
-            <div style="color:#FF6B6B;font-weight:bold;font-size:15px;">⚠️ ATENÇÃO: Códigos Repetidos Encontrados na coluna Cod ({grupos_n} código(s) em conflito)</div>
+            <div style="color:#FF6B6B;font-weight:bold;font-size:15px;"> ATENÇÃO: Códigos Repetidos Encontrados na coluna Cod ({grupos_n} código(s) em conflito)</div>
             <ul style="margin:12px 0 0 20px;padding:0;font-size:13px;">{itens}</ul>
         </div>"""
 
@@ -241,7 +241,7 @@ pagina = f"""
         <div class="card" style="border-left:4px solid #FF6B6B;"><div class="label">Pendentes</div><div class="valor" style="color:#FF6B6B;">{pendentes}</div></div>
     </div>
     <div style="margin-top:24px;">
-        <h3 style="margin:0;color:#FFF;">🚨 Vagas Perto de Vencer (Próximos {dias_limite} dias)</h3>
+        <h3 style="margin:0;color:#FFF;"> Vagas Perto de Vencer (Próximos {dias_limite} dias)</h3>
         <table>
             <thead><tr><th>Curso / Vaga</th><th>Data Limite</th><th style="text-align:center;">Link da Página</th></tr></thead>
             <tbody>{linhas}</tbody>

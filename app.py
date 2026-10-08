@@ -82,18 +82,29 @@ if df_dash.empty:
     st.warning("A base de dados retornou vazia.")
     st.stop()
 
-col_cod = next((col for col in df_dash.columns if col.upper() == 'COD'), 'Cod')
+# Padroniza os nomes das colunas para evitar conflito de maiúsculas/minúsculas
+df_dash.columns = [col.strip() for col in df_dash.columns]
+
+# Identifica as colunas exatas
+col_cod = next((col for col in df_dash.columns if col.lower() == 'cod'), 'Cod')
 col_prazo = next((col for col in df_dash.columns if col.lower() in ['prazo final', 'prazofinal', 'prazo']), 'Prazo final')
-col_curso = next((col for col in df_dash.columns if col.lower() in ['curso', 'vaga']), 'Curso')
-col_status = next((col for col in df_dash.columns if col.lower() in ['status']), 'Status')
+col_curso = next((col for col in df_dash.columns if col.lower() in ['curso', 'vaga', 'nome']), df_dash.columns[0])
+col_status = next((col for col in df_dash.columns if col.lower() == 'status'), None)
 
 if col_prazo in df_dash.columns:
     df_dash[col_prazo] = pd.to_datetime(df_dash[col_prazo], errors='coerce')
 
 total_vagas = len(df_dash)
-postadas = len(df_dash[df_dash[col_status].astype(str).str.strip().str.lower().isin(['postado', 'publicado', 'enviado', 'ok', 'feito'])]) if col_status in df_dash.columns else 0
-pendentes = total_vagas - postadas if col_status in df_dash.columns else total_vagas
 
+# Contagem real de postadas e pendentes baseada no status do Notion
+postadas = 0
+pendentes = total_vagas
+if col_status and col_status in df_dash.columns:
+    status_series = df_dash[col_status].astype(str).str.strip().str.lower()
+    postadas = len(df_dash[status_series.isin(['postado', 'publicado', 'enviado', 'ok', 'feito', 'concluído', 'sim'])])
+    pendentes = total_vagas - postadas
+
+# --- LÓGICA DE DUPLICADOS ---
 html_alerta_duplicados = ""
 if col_cod in df_dash.columns:
     cods_limpos = df_dash[col_cod].astype(str).str.strip()
@@ -106,8 +117,8 @@ if col_cod in df_dash.columns:
         for cod, group in grupos:
             vagas_info = []
             for idx, row in group.iterrows():
-                nome_curso = row.get(col_curso, f"Linha {idx}")
-                if not nome_curso or str(nome_curso).strip() == '' or str(nome_curso) == 'nan':
+                nome_curso = str(row.get(col_curso, '')).strip()
+                if not nome_curso or nome_curso == 'nan':
                     nome_curso = f"Linha {idx}"
                 vagas_info.append(f"<b>{nome_curso}</b> (Linha {idx})")
             
@@ -132,7 +143,53 @@ if col_cod in df_dash.columns:
         </div>
         """
 
-html_kpis = f"""
+# --- TABELA DE URGÊNCIA ---
+hoje = pd.Timestamp.now().normalize()
+dias_limite = 30 
+
+linhas_tabela = ""
+if col_prazo in df_dash.columns:
+    df_urgentes = df_dash[
+        (df_dash[col_prazo].notna()) & 
+        (df_dash[col_prazo] >= hoje) & 
+        (df_dash[col_prazo] <= hoje + timedelta(days=dias_limite))
+    ].sort_values(col_prazo).copy()
+
+    if len(df_urgentes) > 0:
+        for idx, row in df_urgentes.iterrows():
+            curso_vaga = str(row.get(col_curso, '')).strip()
+            if not curso_vaga or curso_vaga == 'nan':
+                curso_vaga = f'Linha {idx}'
+                
+            prazo = row[col_prazo].strftime('%d/%m/%Y')
+            
+            link_url = row.get('Link da Vaga', row.get(col_cod, '#'))
+
+            if pd.notna(link_url) and str(link_url).strip() != '' and link_url != '#':
+                val_link = str(link_url).strip()
+                url_destino = val_link if val_link.startswith(('http://', 'https://')) else f"https://{val_link}"
+                btn_link = f'<a href="{url_destino}" target="_blank" style="background:#3A28FF; color:#FFF; padding:6px 14px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:600;">Acessar Página ↗</a>'
+            else:
+                btn_link = '<span style="color:#777; font-size:12px;">Sem link</span>'
+
+            linhas_tabela += f"""
+            <tr>
+                <td style="padding:14px; border-bottom:1px solid #2D2C3A;"><b>{curso_vaga}</b></td>
+                <td style="padding:14px; border-bottom:1px solid #2D2C3A; color:#FF5252; font-weight:bold;">{prazo}</td>
+                <td style="padding:14px; border-bottom:1px solid #2D2C3A; text-align:center;">{btn_link}</td>
+            </tr>
+            """
+    else:
+        linhas_tabela = f"""
+        <tr>
+            <td colspan="3" style="padding:20px; text-align:center; color:#A0A0B0;">
+                Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 🎉
+            </td>
+        </tr>
+        """
+
+# --- MONTAGEM FINAL DO HTML ÚNICO (Evita vazamento de código na tela) ---
+html_completo = f"""
 <style>
     .dash-container {{
         font-family: 'Segoe UI', sans-serif;
@@ -166,6 +223,27 @@ html_kpis = f"""
         margin-top: 8px;
         color: #FFFFFF;
     }}
+    .quadro-container {{
+        font-family: 'Segoe UI', sans-serif;
+        background-color: #17161F;
+        padding: 24px;
+        border-radius: 16px;
+        color: #E8E8EE;
+        margin-top: 24px;
+    }}
+    .tabela-urgente {{
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+    }}
+    .tabela-urgente th {{
+        text-align: left;
+        padding: 12px 14px;
+        background-color: #22202E;
+        color: #9E9EAE;
+        font-size: 12px;
+        text-transform: uppercase;
+    }}
 </style>
 
 {html_alerta_duplicados}
@@ -186,97 +264,22 @@ html_kpis = f"""
         </div>
     </div>
 </div>
+
+<div class="quadro-container">
+    <h3 style="margin:0; color:#FFFFFF;">🚨 Vagas Perto de Vencer (Próximos {dias_limite} dias)</h3>
+    <table class="tabela-urgente">
+        <thead>
+            <tr>
+                <th>Curso / Vaga</th>
+                <th>Data Limite</th>
+                <th style="text-align:center;">Link da Página</th>
+            </tr>
+        </thead>
+        <tbody>
+            {linhas_tabela}
+        </tbody>
+    </table>
+</div>
 """
 
-st.markdown(html_kpis, unsafe_allow_html=True)
-
-hoje = pd.Timestamp.now().normalize()
-dias_limite = 30 
-
-if col_prazo in df_dash.columns:
-    df_urgentes = df_dash[
-        (df_dash[col_prazo].notna()) & 
-        (df_dash[col_prazo] >= hoje) & 
-        (df_dash[col_prazo] <= hoje + timedelta(days=dias_limite))
-    ].sort_values(col_prazo).copy()
-
-    linhas_tabela = ""
-    if len(df_urgentes) > 0:
-        for idx, row in df_urgentes.iterrows():
-            curso_vaga = row.get(col_curso, f'Linha {idx}')
-            if not curso_vaga or str(curso_vaga).strip() == '' or str(curso_vaga) == 'nan':
-                curso_vaga = f'Linha {idx}'
-                
-            prazo = row[col_prazo].strftime('%d/%m/%Y')
-            
-            link_url = row.get('Link da Vaga', row.get(col_cod, '#'))
-
-            if pd.notna(link_url) and str(link_url).strip() != '' and link_url != '#':
-                val_link = str(link_url).strip()
-                if val_link.startswith('http://') or val_link.startswith('https://'):
-                    url_destino = val_link
-                else:
-                    url_destino = f"https://{val_link}"
-                
-                btn_link = f'<a href="{url_destino}" target="_blank" style="background:#3A28FF; color:#FFF; padding:6px 14px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:600;">Acessar Página ↗</a>'
-            else:
-                btn_link = '<span style="color:#777; font-size:12px;">Sem link</span>'
-
-            linhas_tabela += f"""
-            <tr>
-                <td style="padding:14px; border-bottom:1px solid #2D2C3A;"><b>{curso_vaga}</b></td>
-                <td style="padding:14px; border-bottom:1px solid #2D2C3A; color:#FF5252; font-weight:bold;">{prazo}</td>
-                <td style="padding:14px; border-bottom:1px solid #2D2C3A; text-align:center;">{btn_link}</td>
-            </tr>
-            """
-    else:
-        linhas_tabela = f"""
-        <tr>
-            <td colspan="3" style="padding:20px; text-align:center; color:#A0A0B0;">
-                Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 🎉
-            </td>
-        </tr>
-        """
-
-    html_quadro_urgencia = f"""
-    <style>
-        .quadro-container {{
-            font-family: 'Segoe UI', sans-serif;
-            background-color: #17161F;
-            padding: 24px;
-            border-radius: 16px;
-            color: #E8E8EE;
-        }}
-        .tabela-urgente {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 16px;
-        }}
-        .tabela-urgente th {{
-            text-align: left;
-            padding: 12px 14px;
-            background-color: #22202E;
-            color: #9E9EAE;
-            font-size: 12px;
-            text-transform: uppercase;
-        }}
-    </style>
-
-    <div class="quadro-container">
-        <h3 style="margin:0; color:#FFFFFF;">🚨 Vagas Perto de Vencer (Próximos {dias_limite} dias)</h3>
-        <table class="tabela-urgente">
-            <thead>
-                <tr>
-                    <th>Curso / Vaga</th>
-                    <th>Data Limite</th>
-                    <th style="text-align:center;">Link da Página</th>
-                </tr>
-            </thead>
-            <tbody>
-                {linhas_tabela}
-            </tbody>
-        </table>
-    </div>
-    """
-
-    st.markdown(html_quadro_urgencia, unsafe_allow_html=True)
+st.markdown(html_completo, unsafe_allow_html=True)

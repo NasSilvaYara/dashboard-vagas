@@ -61,7 +61,7 @@ def carregar_dados_notion():
                     valor = dados.get("url", "")
                 elif tipo == "formula":
                     form = dados.get("formula", {})
-                    valor = form.get("string", "") or form.get("number", "") or form.get("boolean", "")
+                    valor = form.get("string", "") or str(form.get("number", "")) or str(form.get("boolean", ""))
                 elif tipo == "phone_number":
                     valor = dados.get("phone_number", "")
                 elif tipo == "email":
@@ -75,7 +75,7 @@ def carregar_dados_notion():
         
     return pd.DataFrame(registros)
 
-with st.spinner("Carregando vagas do Notion..."):
+with st.spinner("Carregando dados do Notion..."):
     try:
         df_dash = carregar_dados_notion()
     except Exception as e:
@@ -86,30 +86,32 @@ if df_dash.empty:
     st.warning("A base de dados retornou vazia.")
     st.stop()
 
-# Identifica as colunas de forma inteligente (ignorando maiúsculas/minúsculas)
-col_cod = next((col for col in df_dash.columns if col.upper() == 'COD'), None)
-col_prazo = next((col for col in df_dash.columns if col.lower() in ['prazo final', 'prazofinal', 'prazo']), None)
-col_curso = next((col for col in df_dash.columns if col.lower() in ['curso', 'vaga', 'nome', 'titulo', 'título']), df_dash.columns[0])
-col_status = next((col for col in df_dash.columns if col.lower() in ['status', 'estado']), None)
+# Mapeamento exato baseado na sua imagem
+col_cod = 'Cod' if 'Cod' in df_dash.columns else 'COD'
+col_prazo = 'Prazo final' if 'Prazo final' in df_dash.columns else 'Prazo'
+col_curso = 'Curso' if 'Curso' in df_dash.columns else df_dash.columns[0]
+col_status = 'Status' if 'Status' in df_dash.columns else None
+col_link_vaga = 'Link da Vaga' if 'Link da Vaga' in df_dash.columns else None
 
-if col_prazo:
+if col_prazo in df_dash.columns:
     df_dash[col_prazo] = pd.to_datetime(df_dash[col_prazo], errors='coerce')
 
 total_vagas = len(df_dash)
 
-# Calcula status considerando variações comuns
+# Contagem correta baseada na coluna Status da imagem
 postadas = 0
 pendentes = 0
-if col_status:
-    postadas = len(df_dash[df_dash[col_status].astype(str).str.lower().isin(['postado', 'publicado', 'enviado'])])
-    pendentes = len(df_dash[df_dash[col_status].astype(str).str.lower().isin(['não postado', 'nao postado', 'pendente', 'em andamento'])])
+if col_status and col_status in df_dash.columns:
+    # Normaliza o texto para comparar sem erro de maiúscula/minúscula
+    status_lower = df_dash[col_status].astype(str).str.strip().str.lower()
+    postadas = len(df_dash[status_lower.isin(['postado', 'publicado', 'enviado', 'ok', 'feito'])])
+    pendentes = total_vagas - postadas
 else:
-    # Se não achar a coluna status, assume o total restante
     pendentes = total_vagas
 
-# --- ALERTA DE DUPLICADOS ---
+# --- LÓGICA DE DUPLICADOS ---
 html_alerta_duplicados = ""
-if col_cod:
+if col_cod in df_dash.columns:
     cods_limpos = df_dash[col_cod].astype(str).str.strip()
     mascara_duplicados = cods_limpos.duplicated(keep=False) & (cods_limpos != '') & (cods_limpos != 'nan') & df_dash[col_cod].notna()
     df_duplicados = df_dash[mascara_duplicados].copy()
@@ -121,6 +123,8 @@ if col_cod:
             vagas_info = []
             for _, row in group.iterrows():
                 nome_curso = row.get(col_curso, 'Curso sem nome')
+                if not nome_curso or str(nome_curso).strip() == '':
+                    nome_curso = 'Curso sem nome'
                 vagas_info.append(f"<b>{nome_curso}</b>")
             
             detalhe_vagas = " &bull; ".join(vagas_info)
@@ -136,7 +140,7 @@ if col_cod:
         html_alerta_duplicados = f"""
         <div style="background-color: #2E1B22; border: 1px solid #FF5252; border-radius: 12px; padding: 16px 20px; color: #E8E8EE; margin-bottom: 24px; font-family: 'Segoe UI', sans-serif;">
             <div style="display: flex; align-items: center; gap: 8px; color: #FF5252; font-weight: bold; font-size: 15px;">
-                <span> ATENÇÃO: Códigos Repetidos Encontrados na coluna COD ({len(grupos)} código(s) em conflito)</span>
+                <span> ATENÇÃO: Códigos Repetidos Encontrados na coluna Cod ({len(grupos)} código(s) em conflito)</span>
             </div>
             <ul style="margin: 12px 0 0 20px; padding: 0; color: #E8E8EE; font-size: 13px;">
                 {itens_duplicados_html}
@@ -207,7 +211,7 @@ st.markdown(html_kpis, unsafe_allow_html=True)
 hoje = pd.Timestamp.now().normalize()
 dias_limite = 30
 
-if col_prazo:
+if col_prazo in df_dash.columns:
     df_urgentes = df_dash[
         (df_dash[col_prazo].notna()) & 
         (df_dash[col_prazo] >= hoje) & 
@@ -222,11 +226,16 @@ if col_prazo:
                 curso_vaga = 'Não informado'
                 
             prazo = row[col_prazo].strftime('%d/%m/%Y')
-            link_url = row.get(col_cod, '#') if col_cod else '#'
+            
+            # Pega o link da coluna 'Link da Vaga' ou do 'Cod' se não houver
+            link_url = '#'
+            if col_link_vaga and pd.notna(row.get(col_link_vaga)) and str(row.get(col_link_vaga)).strip() != '':
+                link_url = str(row.get(col_link_vaga)).strip()
+            elif col_cod and pd.notna(row.get(col_cod)) and str(row.get(col_cod)).strip() != '':
+                link_url = str(row.get(col_cod)).strip()
 
-            if pd.notna(link_url) and str(link_url).strip() != '' and link_url != '#':
-                val_link = str(link_url).strip()
-                url_destino = val_link if val_link.startswith(('http://', 'https://')) else f"https://{val_link}"
+            if link_url != '#':
+                url_destino = link_url if link_url.startswith(('http://', 'https://')) else f"https://{link_url}"
                 btn_link = f'<a href="{url_destino}" target="_blank" style="background:#3A28FF; color:#FFF; padding:6px 14px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:600;">Acessar Página ↗</a>'
             else:
                 btn_link = '<span style="color:#777; font-size:12px;">Sem link</span>'

@@ -9,7 +9,7 @@ try:
     NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
     DATABASE_ID = st.secrets["DATABASE_ID"]
 except Exception:
-    st.error("⚠️ Configure os Secrets no painel do Streamlit.")
+    st.error("⚠️ Configure os Secrets (NOTION_TOKEN e DATABASE_ID) no painel do Streamlit.")
     st.stop()
 
 @st.cache_data(ttl=30)
@@ -82,29 +82,18 @@ if df_dash.empty:
     st.warning("A base de dados retornou vazia.")
     st.stop()
 
-# Mapeamento flexível das colunas da sua base
-colunas_lower = {col.lower(): col for col in df_dash.columns}
-
-col_cod = colunas_lower.get('cod') or 'Cod'
-col_prazo = colunas_lower.get('prazo final') or colunas_lower.get('prazo') or 'Prazo final'
-col_curso = colunas_lower.get('curso') or colunas_lower.get('vaga') or colunas_lower.get('nome') or list(df_dash.columns)[0]
-col_status = colunas_lower.get('status')
-col_link_vaga = colunas_lower.get('link da vaga') or colunas_lower.get('link')
+col_cod = next((col for col in df_dash.columns if col.upper() == 'COD'), 'Cod')
+col_prazo = next((col for col in df_dash.columns if col.lower() in ['prazo final', 'prazofinal', 'prazo']), 'Prazo final')
+col_curso = next((col for col in df_dash.columns if col.lower() in ['curso', 'vaga']), 'Curso')
+col_status = next((col for col in df_dash.columns if col.lower() in ['status']), 'Status')
 
 if col_prazo in df_dash.columns:
     df_dash[col_prazo] = pd.to_datetime(df_dash[col_prazo], errors='coerce')
 
 total_vagas = len(df_dash)
+postadas = len(df_dash[df_dash[col_status].astype(str).str.strip().str.lower().isin(['postado', 'publicado', 'enviado', 'ok', 'feito'])]) if col_status in df_dash.columns else 0
+pendentes = total_vagas - postadas if col_status in df_dash.columns else total_vagas
 
-# Contagem de status
-postadas = 0
-pendentes = total_vagas
-if col_status and col_status in df_dash.columns:
-    status_series = df_dash[col_status].astype(str).str.strip().str.lower()
-    postadas = len(df_dash[status_series.isin(['postado', 'publicado', 'enviado', 'ok', 'feito', 'concluído', 'sim'])])
-    pendentes = total_vagas - postadas
-
-# --- ALERTA DE DUPLICADOS ---
 html_alerta_duplicados = ""
 if col_cod in df_dash.columns:
     cods_limpos = df_dash[col_cod].astype(str).str.strip()
@@ -116,11 +105,11 @@ if col_cod in df_dash.columns:
         itens_duplicados_html = ""
         for cod, group in grupos:
             vagas_info = []
-            for _, row in group.iterrows():
-                nome_curso = str(row.get(col_curso, '')).strip()
-                if not nome_curso or nome_curso == 'nan':
-                    nome_curso = 'Curso sem nome'
-                vagas_info.append(f"<b>{nome_curso}</b>")
+            for idx, row in group.iterrows():
+                nome_curso = row.get(col_curso, f"Linha {idx}")
+                if not nome_curso or str(nome_curso).strip() == '' or str(nome_curso) == 'nan':
+                    nome_curso = f"Linha {idx}"
+                vagas_info.append(f"<b>{nome_curso}</b> (Linha {idx})")
             
             detalhe_vagas = " &bull; ".join(vagas_info)
             itens_duplicados_html += f"""
@@ -143,7 +132,6 @@ if col_cod in df_dash.columns:
         </div>
         """
 
-# --- HTML DOS CARDS ---
 html_kpis = f"""
 <style>
     .dash-container {{
@@ -202,11 +190,9 @@ html_kpis = f"""
 
 st.markdown(html_kpis, unsafe_allow_html=True)
 
-# --- QUADRO DE URGÊNCIA ---
 hoje = pd.Timestamp.now().normalize()
-dias_limite = 30
+dias_limite = 30 
 
-linhas_tabela = ""
 if col_prazo in df_dash.columns:
     df_urgentes = df_dash[
         (df_dash[col_prazo].notna()) & 
@@ -214,22 +200,24 @@ if col_prazo in df_dash.columns:
         (df_dash[col_prazo] <= hoje + timedelta(days=dias_limite))
     ].sort_values(col_prazo).copy()
 
+    linhas_tabela = ""
     if len(df_urgentes) > 0:
-        for _, row in df_urgentes.iterrows():
-            curso_vaga = str(row.get(col_curso, '')).strip()
-            if not curso_vaga or curso_vaga == 'nan':
-                curso_vaga = 'Vaga sem nome'
+        for idx, row in df_urgentes.iterrows():
+            curso_vaga = row.get(col_curso, f'Linha {idx}')
+            if not curso_vaga or str(curso_vaga).strip() == '' or str(curso_vaga) == 'nan':
+                curso_vaga = f'Linha {idx}'
                 
             prazo = row[col_prazo].strftime('%d/%m/%Y')
             
-            link_url = '#'
-            if col_link_vaga and pd.notna(row.get(col_link_vaga)) and str(row.get(col_link_vaga)).strip() != '':
-                link_url = str(row.get(col_link_vaga)).strip()
-            elif col_cod and pd.notna(row.get(col_cod)) and str(row.get(col_cod)).strip() != '':
-                link_url = str(row.get(col_cod)).strip()
+            link_url = row.get('Link da Vaga', row.get(col_cod, '#'))
 
-            if link_url != '#':
-                url_destino = link_url if link_url.startswith(('http://', 'https://')) else f"https://{link_url}"
+            if pd.notna(link_url) and str(link_url).strip() != '' and link_url != '#':
+                val_link = str(link_url).strip()
+                if val_link.startswith('http://') or val_link.startswith('https://'):
+                    url_destino = val_link
+                else:
+                    url_destino = f"https://{val_link}"
+                
                 btn_link = f'<a href="{url_destino}" target="_blank" style="background:#3A28FF; color:#FFF; padding:6px 14px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:600;">Acessar Página ↗</a>'
             else:
                 btn_link = '<span style="color:#777; font-size:12px;">Sem link</span>'
@@ -250,45 +238,45 @@ if col_prazo in df_dash.columns:
         </tr>
         """
 
-html_quadro_urgencia = f"""
-<style>
-    .quadro-container {{
-        font-family: 'Segoe UI', sans-serif;
-        background-color: #17161F;
-        padding: 24px;
-        border-radius: 16px;
-        color: #E8E8EE;
-    }}
-    .tabela-urgente {{
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 16px;
-    }}
-    .tabela-urgente th {{
-        text-align: left;
-        padding: 12px 14px;
-        background-color: #22202E;
-        color: #9E9EAE;
-        font-size: 12px;
-        text-transform: uppercase;
-    }}
-</style>
+    html_quadro_urgencia = f"""
+    <style>
+        .quadro-container {{
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #17161F;
+            padding: 24px;
+            border-radius: 16px;
+            color: #E8E8EE;
+        }}
+        .tabela-urgente {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }}
+        .tabela-urgente th {{
+            text-align: left;
+            padding: 12px 14px;
+            background-color: #22202E;
+            color: #9E9EAE;
+            font-size: 12px;
+            text-transform: uppercase;
+        }}
+    </style>
 
-<div class="quadro-container">
-    <h3 style="margin:0; color:#FFFFFF;">🚨 Vagas Perto de Vencer (Próximos {dias_limite} dias)</h3>
-    <table class="tabela-urgente">
-        <thead>
-            <tr>
-                <th>Curso / Vaga</th>
-                <th>Data Limite</th>
-                <th style="text-align:center;">Link da Página</th>
-            </tr>
-        </thead>
-        <tbody>
-            {linhas_tabela}
-        </tbody>
-    </table>
-</div>
-"""
+    <div class="quadro-container">
+        <h3 style="margin:0; color:#FFFFFF;">🚨 Vagas Perto de Vencer (Próximos {dias_limite} dias)</h3>
+        <table class="tabela-urgente">
+            <thead>
+                <tr>
+                    <th>Curso / Vaga</th>
+                    <th>Data Limite</th>
+                    <th style="text-align:center;">Link da Página</th>
+                </tr>
+            </thead>
+            <tbody>
+                {linhas_tabela}
+            </tbody>
+        </table>
+    </div>
+    """
 
-st.markdown(html_quadro_urgencia, unsafe_allow_html=True)
+    st.markdown(html_quadro_urgencia, unsafe_allow_html=True)

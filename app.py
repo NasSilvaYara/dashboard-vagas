@@ -1,30 +1,43 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from notion_client import Client
+import requests
 
-# Configuração da página (Layout largo)
 st.set_page_config(page_title="Dashboard de Vagas", layout="wide")
 
-# Puxa as chaves de segurança configuradas no Streamlit Secrets
+# Puxa as chaves do Streamlit Secrets
 try:
     NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
     DATABASE_ID = st.secrets["DATABASE_ID"]
 except Exception:
-    st.error(" As credenciais (Secrets) do Notion não foram encontradas nas configurações do Streamlit.")
+    st.error(" Configure os Secrets (NOTION_TOKEN e DATABASE_ID) no painel do Streamlit.")
     st.stop()
 
-# Função que conecta no Notion e traz os dados reais da sua base (CORRIGIDO: notion.databases.query)
+# Função robusta via API direta do Notion (sem depender de bibliotecas externas complexas)
 @st.cache_data(ttl=30)
 def carregar_dados_notion():
-    notion = Client(auth=NOTION_TOKEN)
+    url = f"https://api.notion.com/v1/databases/{DATABASE_ID}/query"
+    headers = {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json"
+    }
+    
     registros = []
     has_more = True
     start_cursor = None
     
     while has_more:
-        response = notion.databases.query(database_id=DATABASE_ID, start_cursor=start_cursor)
-        for page in response.get("results", []):
+        payload = {}
+        if start_cursor:
+            payload["start_cursor"] = start_cursor
+            
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code != 200:
+            raise Exception(f"Erro na API do Notion ({response.status_code}): {response.text}")
+            
+        data = response.json()
+        for page in data.get("results", []):
             props = page.get("properties", {})
             linha = {}
             for nome_col, dados in props.items():
@@ -45,21 +58,21 @@ def carregar_dados_notion():
                     linha[nome_col] = dados.get("url", "")
             registros.append(linha)
             
-        has_more = response.get("has_more", False)
-        start_cursor = response.get("next_cursor")
+        has_more = data.get("has_more", False)
+        start_cursor = data.get("next_cursor")
         
     return pd.DataFrame(registros)
 
 # Carrega os dados
-with st.spinner("Conectando ao Notion e carregando as vagas..."):
+with st.spinner("Conectando ao Notion..."):
     try:
         df_dash = carregar_dados_notion()
     except Exception as e:
-        st.error(f"Erro ao conectar com o Notion: {e}")
+        st.error(f"{e}")
         st.stop()
 
 if df_dash.empty:
-    st.warning("A base de dados do Notion retornou vazia ou a integração não tem permissão de leitura na página.")
+    st.warning("A base de dados retornou vazia ou a integração não tem permissão.")
     st.stop()
 
 # Mapeamento de colunas
@@ -207,7 +220,7 @@ if col_prazo in df_dash.columns:
         linhas_tabela = f"""
         <tr>
             <td colspan="3" style="padding:20px; text-align:center; color:#A0A0B0;">
-                Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 🎉
+                Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 
             </td>
         </tr>
         """

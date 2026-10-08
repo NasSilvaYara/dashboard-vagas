@@ -14,7 +14,7 @@ except Exception:
     st.error(" As credenciais (Secrets) do Notion não foram encontradas nas configurações do Streamlit.")
     st.stop()
 
-# Função que conecta no Notion e traz os dados reais da sua base
+# Função que conecta no Notion e traz os dados reais da sua base (CORRIGIDO: notion.databases.query)
 @st.cache_data(ttl=30)
 def carregar_dados_notion():
     notion = Client(auth=NOTION_TOKEN)
@@ -207,7 +207,7 @@ if col_prazo in df_dash.columns:
         linhas_tabela = f"""
         <tr>
             <td colspan="3" style="padding:20px; text-align:center; color:#A0A0B0;">
-                Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 
+                Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 🎉
             </td>
         </tr>
         """

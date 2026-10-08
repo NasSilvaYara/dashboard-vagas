@@ -10,14 +10,18 @@ st.set_page_config(page_title="Dashboard de Vagas", layout="wide", initial_sideb
 st.markdown(
     """
     <style>
+        html, body, .stApp,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stMain"],
+        [data-testid="stMainBlockContainer"],
+        .main { background: #191919 !important; }
         header, footer, #MainMenu,
         [data-testid="stToolbar"],
         [data-testid="stDecoration"],
         [data-testid="stStatusWidget"],
         [data-testid="stHeader"] { display: none !important; }
-        .stApp { background: #17161F; }
         .block-container { padding: 0 !important; max-width: 100% !important; }
-        iframe { border: none !important; }
+        iframe { border: none !important; background: #191919 !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -176,11 +180,11 @@ if col_cod:
                 f"<b>{nome_vaga(i, r)}</b> (Linha {i})" for i, r in grupo.iterrows()
             )
             itens += f"""
-            <li style="margin-bottom:8px;">Código <b style="color:#FF5252;">"{html.escape(cod)}"</b> ({len(grupo)}x) — Vagas envolvidas:
-            <div style="margin-top:2px;color:#D0D0DE;font-size:12px;padding-left:10px;">{vagas}</div></li>"""
+            <li style="margin-bottom:8px;">Código <b style="color:#FF6B6B;">"{html.escape(cod)}"</b> ({len(grupo)}x) — Vagas envolvidas:
+            <div style="margin-top:2px;color:#B8B8B8;font-size:12px;padding-left:10px;">{vagas}</div></li>"""
         alerta = f"""
-        <div style="background:#2E1B22;border:1px solid #FF5252;border-radius:12px;padding:16px 20px;color:#E8E8EE;margin-bottom:24px;">
-            <div style="color:#FF5252;font-weight:bold;font-size:15px;">⚠️ ATENÇÃO: Códigos Repetidos Encontrados na coluna Cod ({grupos_n} código(s) em conflito)</div>
+        <div style="background:#2A1D1D;border:1px solid #5C2B2B;border-radius:8px;padding:16px 20px;color:#E6E6E6;margin-bottom:24px;">
+            <div style="color:#FF6B6B;font-weight:bold;font-size:15px;">⚠️ ATENÇÃO: Códigos Repetidos Encontrados na coluna Cod ({grupos_n} código(s) em conflito)</div>
             <ul style="margin:12px 0 0 20px;padding:0;font-size:13px;">{itens}</ul>
         </div>"""
 
@@ -205,36 +209,36 @@ if col_prazo:
                     break
         if link:
             destino = link if link.startswith(("http://", "https://")) else f"https://{link}"
-            botao = f'<a href="{html.escape(destino)}" target="_blank" style="background:#3A28FF;color:#FFF;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600;">Acessar Página ↗</a>'
+            botao = f'<a href="{html.escape(destino)}" target="_blank" style="background:#2383E2;color:#FFF;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600;">Acessar Página ↗</a>'
         else:
             botao = '<span style="color:#777;font-size:12px;">Sem link</span>'
         linhas += f"""
         <tr>
-            <td style="padding:14px;border-bottom:1px solid #2D2C3A;"><b>{nome_vaga(idx, row)}</b></td>
-            <td style="padding:14px;border-bottom:1px solid #2D2C3A;color:#FF5252;font-weight:bold;">{row[col_prazo].strftime('%d/%m/%Y')}</td>
-            <td style="padding:14px;border-bottom:1px solid #2D2C3A;text-align:center;">{botao}</td>
+            <td style="padding:14px;border-bottom:1px solid #2F2F2F;"><b>{nome_vaga(idx, row)}</b></td>
+            <td style="padding:14px;border-bottom:1px solid #2F2F2F;color:#FF6B6B;font-weight:bold;">{row[col_prazo].strftime('%d/%m/%Y')}</td>
+            <td style="padding:14px;border-bottom:1px solid #2F2F2F;text-align:center;">{botao}</td>
         </tr>"""
 if not linhas:
-    linhas = f'<tr><td colspan="3" style="padding:20px;text-align:center;color:#A0A0B0;">Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 🎉</td></tr>'
+    linhas = f'<tr><td colspan="3" style="padding:20px;text-align:center;color:#9B9B9B;">Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 🎉</td></tr>'
 
 pagina = f"""
 <style>
-    html, body {{ margin:0; padding:0; background:#17161F; }}
-    body {{ font-family:'Segoe UI',sans-serif; color:#E8E8EE; overflow:hidden; }}
-    .dash {{ padding:20px; }}
+    html, body {{ margin:0; padding:0; background:#191919; }}
+    body {{ font-family:'Segoe UI',sans-serif; color:#E6E6E6; overflow:hidden; }}
+    .dash {{ padding:20px; background:#191919; }}
     .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; }}
-    .card {{ background:#22202E; border:1px solid #2D2C3A; padding:20px; border-radius:12px; }}
-    .label {{ font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:#9E9EAE; font-weight:600; }}
+    .card {{ background:#202020; border:1px solid #2F2F2F; padding:20px; border-radius:8px; }}
+    .label {{ font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:#9B9B9B; font-weight:600; }}
     .valor {{ font-size:32px; font-weight:800; margin-top:8px; color:#FFF; }}
     table {{ width:100%; border-collapse:collapse; margin-top:16px; }}
-    th {{ text-align:left; padding:12px 14px; background:#22202E; color:#9E9EAE; font-size:12px; text-transform:uppercase; }}
+    th {{ text-align:left; padding:12px 14px; background:#202020; color:#9B9B9B; font-size:12px; text-transform:uppercase; }}
 </style>
 <div class="dash">
     {alerta}
     <div class="grid">
-        <div class="card" style="border-left:4px solid #3A28FF;"><div class="label">Total de Vagas</div><div class="valor">{total}</div></div>
+        <div class="card" style="border-left:4px solid #2383E2;"><div class="label">Total de Vagas</div><div class="valor">{total}</div></div>
         <div class="card" style="border-left:4px solid #2ECC71;"><div class="label">Postadas</div><div class="valor" style="color:#2ECC71;">{postadas}</div></div>
-        <div class="card" style="border-left:4px solid #FF5252;"><div class="label">Pendentes</div><div class="valor" style="color:#FF5252;">{pendentes}</div></div>
+        <div class="card" style="border-left:4px solid #FF6B6B;"><div class="label">Pendentes</div><div class="valor" style="color:#FF6B6B;">{pendentes}</div></div>
     </div>
     <div style="margin-top:24px;">
         <h3 style="margin:0;color:#FFF;">🚨 Vagas Perto de Vencer (Próximos {dias_limite} dias)</h3>

@@ -5,7 +5,23 @@ import streamlit as st
 import streamlit.components.v1 as components
 from datetime import timedelta
 
-st.set_page_config(page_title="Dashboard de Vagas", layout="wide")
+st.set_page_config(page_title="Dashboard de Vagas", layout="wide", initial_sidebar_state="collapsed")
+
+st.markdown(
+    """
+    <style>
+        header, footer, #MainMenu,
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        [data-testid="stHeader"] { display: none !important; }
+        .stApp { background: #17161F; }
+        .block-container { padding: 0 !important; max-width: 100% !important; }
+        iframe { border: none !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 try:
     NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
@@ -147,11 +163,11 @@ if col_status:
 pendentes = total - postadas
 
 alerta = ""
+grupos_n = 0
 if col_cod:
     cods = df[col_cod].astype(str).str.strip()
     mask = cods.duplicated(keep=False) & (cods != "") & (cods.str.lower() != "nan")
     dup = df[mask]
-    grupos_n = 0
     itens = ""
     if not dup.empty:
         for cod, grupo in dup.groupby(cods[mask]):
@@ -167,8 +183,6 @@ if col_cod:
             <div style="color:#FF5252;font-weight:bold;font-size:15px;">⚠️ ATENÇÃO: Códigos Repetidos Encontrados na coluna Cod ({grupos_n} código(s) em conflito)</div>
             <ul style="margin:12px 0 0 20px;padding:0;font-size:13px;">{itens}</ul>
         </div>"""
-else:
-    grupos_n = 0
 
 hoje = pd.Timestamp.now(tz="America/Sao_Paulo").tz_localize(None).normalize()
 dias_limite = 30
@@ -205,9 +219,10 @@ if not linhas:
 
 pagina = f"""
 <style>
-    body {{ margin:0; font-family:'Segoe UI',sans-serif; background:#17161F; color:#E8E8EE; }}
-    .dash {{ padding:24px; }}
-    .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; }}
+    html, body {{ margin:0; padding:0; background:#17161F; }}
+    body {{ font-family:'Segoe UI',sans-serif; color:#E8E8EE; overflow:hidden; }}
+    .dash {{ padding:20px; }}
+    .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; }}
     .card {{ background:#22202E; border:1px solid #2D2C3A; padding:20px; border-radius:12px; }}
     .label {{ font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:#9E9EAE; font-weight:600; }}
     .valor {{ font-size:32px; font-weight:800; margin-top:8px; color:#FFF; }}
@@ -231,13 +246,5 @@ pagina = f"""
 </div>
 """
 
-altura = 330 + 70 * max(n_urgentes, 1) + (110 * grupos_n + 90 if alerta else 0)
-components.html(pagina, height=altura, scrolling=True)
-
-with st.expander("Diagnóstico"):
-    st.write("Colunas e tipos que o Notion devolveu:")
-    st.write(tipos)
-    if col_status:
-        st.write("Valores encontrados em Status:")
-        st.write(df[col_status].value_counts(dropna=False))
-    st.dataframe(df.head(10))
+altura = 300 + 72 * max(n_urgentes, 1) + (130 + 100 * grupos_n if alerta else 0)
+components.html(pagina, height=altura, scrolling=False)

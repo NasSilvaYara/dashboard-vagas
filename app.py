@@ -9,7 +9,7 @@ try:
     NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
     DATABASE_ID = st.secrets["DATABASE_ID"]
 except Exception:
-    st.error(" Configure os Secrets (NOTION_TOKEN e DATABASE_ID) no painel do Streamlit.")
+    st.error("⚠️ Configure os Secrets (NOTION_TOKEN e DATABASE_ID) no painel do Streamlit.")
     st.stop()
 
 @st.cache_data(ttl=30)
@@ -44,10 +44,10 @@ def carregar_dados_notion():
                 
                 if tipo == "title":
                     vals = dados.get("title", [])
-                    valor = vals[0]["plain_text"] if vals else ""
+                    valor = "".join([v.get("plain_text", "") for v in vals])
                 elif tipo == "rich_text":
                     vals = dados.get("rich_text", [])
-                    valor = vals[0]["plain_text"] if vals else ""
+                    valor = "".join([v.get("plain_text", "") for v in vals])
                 elif tipo == "select":
                     select = dados.get("select")
                     valor = select["name"] if select else ""
@@ -86,28 +86,28 @@ if df_dash.empty:
     st.warning("A base de dados retornou vazia.")
     st.stop()
 
-# Mapeamento exato baseado na sua imagem
-col_cod = 'Cod' if 'Cod' in df_dash.columns else 'COD'
-col_prazo = 'Prazo final' if 'Prazo final' in df_dash.columns else 'Prazo'
-col_curso = 'Curso' if 'Curso' in df_dash.columns else df_dash.columns[0]
-col_status = 'Status' if 'Status' in df_dash.columns else None
-col_link_vaga = 'Link da Vaga' if 'Link da Vaga' in df_dash.columns else None
+# Identificação flexível das colunas (procurando independentemente de maiúsculas/minúsculas)
+colunas_lower = {col.lower(): col for col in df_dash.columns}
+
+col_cod = colunas_lower.get('cod') or colunas_lower.get('código') or 'Cod'
+col_prazo = colunas_lower.get('prazo final') or colunas_lower.get('prazo') or 'Prazo final'
+col_curso = colunas_lower.get('curso') or colunas_lower.get('vaga') or colunas_lower.get('nome') or df_dash.columns[0]
+col_status = colunas_lower.get('status') or colunas_lower.get('estado')
+col_link_vaga = colunas_lower.get('link da vaga') or colunas_lower.get('link')
 
 if col_prazo in df_dash.columns:
     df_dash[col_prazo] = pd.to_datetime(df_dash[col_prazo], errors='coerce')
 
 total_vagas = len(df_dash)
 
-# Contagem correta baseada na coluna Status da imagem
+# Contagem inteligente de status
 postadas = 0
-pendentes = 0
+pendentes = total_vagas
 if col_status and col_status in df_dash.columns:
-    # Normaliza o texto para comparar sem erro de maiúscula/minúscula
-    status_lower = df_dash[col_status].astype(str).str.strip().str.lower()
-    postadas = len(df_dash[status_lower.isin(['postado', 'publicado', 'enviado', 'ok', 'feito'])])
+    status_series = df_dash[col_status].astype(str).str.strip().str.lower()
+    # Conta tudo que não for vazio ou pendente como postado (ajuste conforme os nomes reais no seu Notion)
+    postadas = len(df_dash[status_series.isin(['postado', 'publicado', 'enviado', 'ok', 'feito', 'concluído', 'sim'])])
     pendentes = total_vagas - postadas
-else:
-    pendentes = total_vagas
 
 # --- LÓGICA DE DUPLICADOS ---
 html_alerta_duplicados = ""
@@ -122,9 +122,9 @@ if col_cod in df_dash.columns:
         for cod, group in grupos:
             vagas_info = []
             for _, row in group.iterrows():
-                nome_curso = row.get(col_curso, 'Curso sem nome')
-                if not nome_curso or str(nome_curso).strip() == '':
-                    nome_curso = 'Curso sem nome'
+                nome_curso = str(row.get(col_curso, '')).strip()
+                if not nome_curso or nome_curso == 'nan':
+                    nome_curso = 'Vaga sem nome'
                 vagas_info.append(f"<b>{nome_curso}</b>")
             
             detalhe_vagas = " &bull; ".join(vagas_info)
@@ -140,7 +140,7 @@ if col_cod in df_dash.columns:
         html_alerta_duplicados = f"""
         <div style="background-color: #2E1B22; border: 1px solid #FF5252; border-radius: 12px; padding: 16px 20px; color: #E8E8EE; margin-bottom: 24px; font-family: 'Segoe UI', sans-serif;">
             <div style="display: flex; align-items: center; gap: 8px; color: #FF5252; font-weight: bold; font-size: 15px;">
-                <span> ATENÇÃO: Códigos Repetidos Encontrados na coluna Cod ({len(grupos)} código(s) em conflito)</span>
+                <span>⚠️ ATENÇÃO: Códigos Repetidos Encontrados na coluna Cod ({len(grupos)} código(s) em conflito)</span>
             </div>
             <ul style="margin: 12px 0 0 20px; padding: 0; color: #E8E8EE; font-size: 13px;">
                 {itens_duplicados_html}
@@ -221,13 +221,12 @@ if col_prazo in df_dash.columns:
     linhas_tabela = ""
     if len(df_urgentes) > 0:
         for _, row in df_urgentes.iterrows():
-            curso_vaga = row.get(col_curso, 'Não informado')
-            if not curso_vaga or str(curso_vaga).strip() == '':
-                curso_vaga = 'Não informado'
+            curso_vaga = str(row.get(col_curso, '')).strip()
+            if not curso_vaga or curso_vaga == 'nan':
+                curso_vaga = 'Vaga sem nome'
                 
             prazo = row[col_prazo].strftime('%d/%m/%Y')
             
-            # Pega o link da coluna 'Link da Vaga' ou do 'Cod' se não houver
             link_url = '#'
             if col_link_vaga and pd.notna(row.get(col_link_vaga)) and str(row.get(col_link_vaga)).strip() != '':
                 link_url = str(row.get(col_link_vaga)).strip()
@@ -281,7 +280,7 @@ if col_prazo in df_dash.columns:
     </style>
 
     <div class="quadro-container">
-        <h3 style="margin:0; color:#FFFFFF;"> Vagas Perto de Vencer (Próximos {dias_limite} dias)</h3>
+        <h3 style="margin:0; color:#FFFFFF;">🚨 Vagas Perto de Vencer (Próximos {dias_limite} dias)</h3>
         <table class="tabela-urgente">
             <thead>
                 <tr>

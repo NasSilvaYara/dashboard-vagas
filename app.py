@@ -5,7 +5,6 @@ import requests
 
 st.set_page_config(page_title="Dashboard de Vagas", layout="wide")
 
-# Puxa as chaves do Streamlit Secrets
 try:
     NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
     DATABASE_ID = st.secrets["DATABASE_ID"]
@@ -13,7 +12,6 @@ except Exception:
     st.error(" Configure os Secrets (NOTION_TOKEN e DATABASE_ID) no painel do Streamlit.")
     st.stop()
 
-# Função robusta via API direta do Notion (sem depender de bibliotecas externas complexas)
 @st.cache_data(ttl=30)
 def carregar_dados_notion():
     url = f"https://api.notion.com/v1/databases/{DATABASE_ID}/query"
@@ -42,20 +40,34 @@ def carregar_dados_notion():
             linha = {}
             for nome_col, dados in props.items():
                 tipo = dados.get("type")
+                valor = ""
+                
                 if tipo == "title":
                     vals = dados.get("title", [])
-                    linha[nome_col] = vals[0]["plain_text"] if vals else ""
+                    valor = vals[0]["plain_text"] if vals else ""
                 elif tipo == "rich_text":
                     vals = dados.get("rich_text", [])
-                    linha[nome_col] = vals[0]["plain_text"] if vals else ""
+                    valor = vals[0]["plain_text"] if vals else ""
                 elif tipo == "select":
                     select = dados.get("select")
-                    linha[nome_col] = select["name"] if select else ""
+                    valor = select["name"] if select else ""
+                elif tipo == "status":
+                    status_obj = dados.get("status")
+                    valor = status_obj["name"] if status_obj else ""
                 elif tipo == "date":
                     date = dados.get("date")
-                    linha[nome_col] = date["start"] if date else ""
+                    valor = date["start"] if date else ""
                 elif tipo == "url":
-                    linha[nome_col] = dados.get("url", "")
+                    valor = dados.get("url", "")
+                elif tipo == "formula":
+                    form = dados.get("formula", {})
+                    valor = form.get("string", "") or form.get("number", "") or form.get("boolean", "")
+                elif tipo == "phone_number":
+                    valor = dados.get("phone_number", "")
+                elif tipo == "email":
+                    valor = dados.get("email", "")
+                
+                linha[nome_col] = valor
             registros.append(linha)
             
         has_more = data.get("has_more", False)
@@ -63,8 +75,7 @@ def carregar_dados_notion():
         
     return pd.DataFrame(registros)
 
-# Carrega os dados
-with st.spinner("Conectando ao Notion..."):
+with st.spinner("Carregando vagas do Notion..."):
     try:
         df_dash = carregar_dados_notion()
     except Exception as e:
@@ -72,25 +83,33 @@ with st.spinner("Conectando ao Notion..."):
         st.stop()
 
 if df_dash.empty:
-    st.warning("A base de dados retornou vazia ou a integração não tem permissão.")
+    st.warning("A base de dados retornou vazia.")
     st.stop()
 
-# Mapeamento de colunas
-col_cod = next((col for col in df_dash.columns if col.upper() == 'COD'), 'COD')
-col_prazo = next((col for col in df_dash.columns if col.lower() in ['prazo final', 'prazofinal', 'prazo']), 'Prazo final')
-col_curso = next((col for col in df_dash.columns if col.lower() in ['curso', 'vaga']), 'Curso')
-col_status = next((col for col in df_dash.columns if col.lower() in ['status']), 'Status')
+# Identifica as colunas de forma inteligente (ignorando maiúsculas/minúsculas)
+col_cod = next((col for col in df_dash.columns if col.upper() == 'COD'), None)
+col_prazo = next((col for col in df_dash.columns if col.lower() in ['prazo final', 'prazofinal', 'prazo']), None)
+col_curso = next((col for col in df_dash.columns if col.lower() in ['curso', 'vaga', 'nome', 'titulo', 'título']), df_dash.columns[0])
+col_status = next((col for col in df_dash.columns if col.lower() in ['status', 'estado']), None)
 
-if col_prazo in df_dash.columns:
+if col_prazo:
     df_dash[col_prazo] = pd.to_datetime(df_dash[col_prazo], errors='coerce')
 
 total_vagas = len(df_dash)
-postadas = len(df_dash[df_dash[col_status] == 'Postado']) if col_status in df_dash.columns else 0
-pendentes = len(df_dash[df_dash[col_status] == 'Não postado']) if col_status in df_dash.columns else 0
 
-# --- LÓGICA DE DUPLICADOS ---
+# Calcula status considerando variações comuns
+postadas = 0
+pendentes = 0
+if col_status:
+    postadas = len(df_dash[df_dash[col_status].astype(str).str.lower().isin(['postado', 'publicado', 'enviado'])])
+    pendentes = len(df_dash[df_dash[col_status].astype(str).str.lower().isin(['não postado', 'nao postado', 'pendente', 'em andamento'])])
+else:
+    # Se não achar a coluna status, assume o total restante
+    pendentes = total_vagas
+
+# --- ALERTA DE DUPLICADOS ---
 html_alerta_duplicados = ""
-if col_cod in df_dash.columns:
+if col_cod:
     cods_limpos = df_dash[col_cod].astype(str).str.strip()
     mascara_duplicados = cods_limpos.duplicated(keep=False) & (cods_limpos != '') & (cods_limpos != 'nan') & df_dash[col_cod].notna()
     df_duplicados = df_dash[mascara_duplicados].copy()
@@ -100,9 +119,9 @@ if col_cod in df_dash.columns:
         itens_duplicados_html = ""
         for cod, group in grupos:
             vagas_info = []
-            for idx, row in group.iterrows():
-                nome_curso = row.get(col_curso, f"Linha {idx}")
-                vagas_info.append(f"<b>{nome_curso}</b> (Linha {idx})")
+            for _, row in group.iterrows():
+                nome_curso = row.get(col_curso, 'Curso sem nome')
+                vagas_info.append(f"<b>{nome_curso}</b>")
             
             detalhe_vagas = " &bull; ".join(vagas_info)
             itens_duplicados_html += f"""
@@ -125,7 +144,7 @@ if col_cod in df_dash.columns:
         </div>
         """
 
-# --- HTML DOS 3 CARDS ---
+# --- HTML DOS CARDS ---
 html_kpis = f"""
 <style>
     .dash-container {{
@@ -188,7 +207,7 @@ st.markdown(html_kpis, unsafe_allow_html=True)
 hoje = pd.Timestamp.now().normalize()
 dias_limite = 30
 
-if col_prazo in df_dash.columns:
+if col_prazo:
     df_urgentes = df_dash[
         (df_dash[col_prazo].notna()) & 
         (df_dash[col_prazo] >= hoje) & 
@@ -199,8 +218,11 @@ if col_prazo in df_dash.columns:
     if len(df_urgentes) > 0:
         for _, row in df_urgentes.iterrows():
             curso_vaga = row.get(col_curso, 'Não informado')
+            if not curso_vaga or str(curso_vaga).strip() == '':
+                curso_vaga = 'Não informado'
+                
             prazo = row[col_prazo].strftime('%d/%m/%Y')
-            link_url = row.get(col_cod, '#')
+            link_url = row.get(col_cod, '#') if col_cod else '#'
 
             if pd.notna(link_url) and str(link_url).strip() != '' and link_url != '#':
                 val_link = str(link_url).strip()
@@ -220,7 +242,7 @@ if col_prazo in df_dash.columns:
         linhas_tabela = f"""
         <tr>
             <td colspan="3" style="padding:20px; text-align:center; color:#A0A0B0;">
-                Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 
+                Nenhuma vaga prestes a vencer nos próximos {dias_limite} dias! 🎉
             </td>
         </tr>
         """
